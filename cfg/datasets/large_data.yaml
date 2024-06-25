@@ -1,0 +1,13 @@
+train: D:\\code\\AI_2024Spring\\ultralytics-main\\data\\train
+val: D:\\code\\AI_2024Spring\\ultralytics-main\\data\\valid
+test: D:\\code\\AI_2024Spring\\ultralytics-main\\data\\test
+
+nc: 4
+names: ['ct', 'cthead', 't', 'thead']
+
+roboflow:
+  workspace: vcs
+  project: hs-zq88d
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/vcs/hs-zq88d/dataset/1
