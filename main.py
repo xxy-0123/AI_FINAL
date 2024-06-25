@@ -18,6 +18,8 @@ from tkinter import Tk, Toplevel
 import threading
 import keyboard
 import time
+from cv2 import dnn
+
 
 # 获取屏幕信息
 user32 = ctypes.windll.user32
@@ -34,6 +36,17 @@ def smooth_mouse_move(dx, dy, steps=5):
 
     for _ in range(steps):
         win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, int(delta_x), int(delta_y), 0, 0)
+
+def onnx_move(dx, dy):
+    net = dnn.readNetFromONNX("mouse.onnx")
+    matblob = np.array([[dx/10,dy/10]])
+    net.setInput(matblob)
+    output = net.forward()
+    output_2d = output.reshape(-1, 2)
+    for index, (delta_x, delta_y) in enumerate(output_2d):
+        if index % 2 == 1:
+            win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, int(delta_x), int(delta_y), 0, 0)
+
 
 
 def release_all_keys():
@@ -77,7 +90,6 @@ def sift_flann_matching(target_img, min_match_count=50):
 
 
 def press_w_key(m):
-    # print("Thread started, pressing 'w' key for 5 seconds.")
     keyboard.press('w')
     time.sleep(m)
     keyboard.release('w')
@@ -92,7 +104,7 @@ def start_pressing_w_key(m):
 
 def main():
     # 配置参数
-    movement_factor = .55
+    movement_factor = .6
     quit_key = "Q"
     confidence = 0.65
     headshot_mode = True
@@ -104,6 +116,8 @@ def main():
     match_scene=False
     vision_type='draw_transparent'
     trained_model_type='n_160_64_best.pt'
+    onnx_mouse_move=True
+    accurate=True
 
     # 获取参数的文本表示
     def get_params_text():
@@ -117,7 +131,9 @@ def main():
             f'f1 character: {character}',
             f'f2 vision_type:{vision_type}',
             f'f3 for match_scene:{match_scene}',
-            f"f4: {trained_model_type}"
+            f"f4: {trained_model_type}",
+            f"f5 onnx_mouse:{onnx_mouse_move}",
+            f"f6 accurate:{accurate}",
 
         ]
         return "\n".join(params_text)
@@ -160,7 +176,7 @@ def main():
         text = get_params_text()
         image = Image.new('RGBA', (300, 300), (0, 0, 0, 0))  # 创建一个透明背景的图像
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype("times.ttf", 25)
+        font = ImageFont.truetype("times.ttf", 22)
         draw.text((10, 10), text, font=font, fill=(255, 0, 0, 255))  # 白色文字
 
         image_tk = ImageTk.PhotoImage(image)
@@ -274,9 +290,25 @@ def main():
             if win32api.GetKeyState(0x73):  # 检查最高位是否为 1
                 state = win32api.GetKeyState(0x73)
                 if state < 0:  # 检查最高位是否为 1
+                    win32api.keybd_event(0x73, 0, win32con.KEYEVENTF_KEYUP, 0)  # 松开
                     current_model_index = (current_model_index + 1) % 4
                     trained_model_type = trained_model[current_model_index]
                     print(f"Current model_type: {trained_model_type}")
+
+            if win32api.GetKeyState(0x74):  # 检查最高位是否为 1
+                state = win32api.GetKeyState(0x74)
+                if state < 0:  # 检查最高位是否为 1
+                    win32api.keybd_event(0x74, 0, win32con.KEYEVENTF_KEYUP, 0)  # 松开
+                    onnx_mouse_move = not onnx_mouse_move
+                    print(f"Current onnx_mouse_move: {onnx_mouse_move}")
+
+
+            if win32api.GetKeyState(0x75):  # 检查最高位是否为 1
+                state = win32api.GetKeyState(0x75)
+                if state < 0:  # 检查最高位是否为 1
+                    win32api.keybd_event(0x75, 0, win32con.KEYEVENTF_KEYUP, 0)  # 松开
+                    accurate = not accurate
+                    print(f"Current accurate: {accurate}")
 
             if character=='t':
             # if mode:
@@ -366,7 +398,9 @@ def main():
                     #最近目标
                     dist_to_center = np.sqrt((xMid - cWidth)**2 + ((yMid - headshot_offset) - cHeight)**2)
                     conf = targets.iloc[0]["confidence"]
-                    shoot_distance=10
+                    shoot_distance=12
+                    if accurate:
+                        shoot_distance=5
                     if model.names[cls_id] in ['HT','HCT']:
                         shoot_distance=min(5,targets.iloc[0]["height"])
 
@@ -380,6 +414,8 @@ def main():
                         keyboard.press('shift')
                         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                         keyboard.release('shift')
                         # win32api.keybd_event(win32con.VK_SHIFT, 0, win32con.KEYEVENTF_KEYUP, 0)
 
@@ -391,11 +427,17 @@ def main():
                 if win32api.GetKeyState(0x14):
                     conf = targets.iloc[0]["confidence"]
                     if abs(xMid - cWidth)+abs((yMid - headshot_offset) - cHeight)<20:
-                        win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, int(mouseMove[0]), int(mouseMove[1]), 0, 0)
+                        win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, int(mouseMove[0]*0.75), int(mouseMove[1]*0.75), 0, 0)
                     elif conf >=confidence: 
-                        smooth_mouse_move(int(mouseMove[0] * movement_factor), int(mouseMove[1] * movement_factor))
-                        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-                        win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+                        if onnx_mouse_move:
+                            # lt = time.time()
+                            # print(lt)
+                            onnx_move(int(mouseMove[0] * movement_factor), int(mouseMove[1] * movement_factor))
+                            # print(time.time()-lt)
+                        else:
+                            smooth_mouse_move(int(mouseMove[0] * movement_factor), int(mouseMove[1] * movement_factor))
+                        # win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                        # win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
                 last_mid_coord = [xMid, yMid]
                 last_reload_time_r = time.time() 
 
